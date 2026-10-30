@@ -405,53 +405,78 @@ function speakBrowser(text){
 
 /* ================= VOZ (entrada) ================= */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, recActive = false, wakeMode = false, awaitingCmd = false, paused = false;
+let rec = null, recActive = false, wakeMode = false, awaitingCmd = false, paused = false, needGesture = false;
+
+/* reconhece "Jarvis" mesmo quando o navegador transcreve errado (Jarbas, Jarves, Garvis...) */
+function lev(a,b){ const d=[...Array(b.length+1).keys()]; for(let i=1;i<=a.length;i++){ let p=d[0]; d[0]=i; for(let j=1;j<=b.length;j++){ const t=d[j]; d[j]=Math.min(d[j]+1,d[j-1]+1,p+(a[i-1]===b[j-1]?0:1)); p=t; } } return d[b.length]; }
+function findWake(text){
+  const words=text.split(/\s+/);
+  for(let i=0;i<words.length;i++){
+    const w=words[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z]/g,'');
+    const w2=(w+(words[i+1]||'').toLowerCase().replace(/[^a-z]/g,''));
+    if(w.length>=4 && w.length<=8 && (w==='jarbas' || lev(w,'jarvis')<=2)) return words.slice(i+1).join(' ');
+    if(w.length<=4 && w2.length>=5 && lev(w2,'jarvis')<=1) return words.slice(i+2).join(' ');   // "já vis", "jar vis"
+  }
+  return null;
+}
+function syncWakeUI(){ $('wake').classList.toggle('on',wakeMode); $('wakeLbl').textContent='MIC SEMPRE LIGADO: '+(wakeMode?'ON':'OFF'); }
+
 function makeRec(){
   if(!SR) return null;
   const r = new SR();
-  r.lang='pt-BR'; r.interimResults=true; r.continuous = wakeMode; r.maxAlternatives=1;
+  r.lang='pt-BR'; r.interimResults=true; r.continuous = wakeMode; r.maxAlternatives=3;
+  r.onstart = ()=>{ recActive=true; if(wakeMode && state==='idle') setState('idle','Ouvindo · diga "Jarvis"'); };
   r.onresult = e=>{
     let interim='', final='';
     for(let i=e.resultIndex;i<e.results.length;i++){
-      const tr = e.results[i][0].transcript;
-      if(e.results[i].isFinal) final += tr; else interim += tr;
+      const res=e.results[i];
+      // se alguma alternativa contém o nome, usa ela
+      let tr=res[0].transcript;
+      for(let k=0;k<res.length;k++) if(findWake(res[k].transcript)!==null){ tr=res[k].transcript; break; }
+      if(res.isFinal) final += tr; else interim += tr;
     }
-    if(!wakeMode || awaitingCmd || /jarvis|jarbas|jarves|jarvi|djarvis|jarvas|jarvys/i.test(interim+final)) $('live').textContent = (final||interim);
+    $('live').textContent = (final||interim);
+    $('live').style.opacity = (!wakeMode || awaitingCmd || findWake(final||interim)!==null) ? 1 : .45;
     if(final) handleHeard(final.trim());
   };
   r.onend = ()=>{
     recActive=false;
-    if(wakeMode && !paused){ setTimeout(startRec, 250); }
-    else if(state==='listening'){ setState('idle'); $('mic').classList.remove('on'); }
+    if(wakeMode && !paused && !needGesture){ setTimeout(startRec, 250); }
+    else if(!wakeMode && state==='listening'){ setState('idle'); $('mic').classList.remove('on'); }
   };
   r.onerror = e=>{
     if(e.error==='not-allowed' || e.error==='service-not-allowed'){
-      wakeMode=false; $('wake').classList.remove('on');
-      addMsg('j','Não tenho permissão para usar o microfone. Libere o acesso no navegador (ícone de cadeado na barra de endereço).');
+      if(wakeMode){
+        // navegador exige um clique antes de ligar o microfone automaticamente
+        needGesture=true; setState('idle','Clique na tela para ativar o microfone');
+        if(!$('needMic')){ const d=document.createElement('div'); d.id='needMic'; d.className='msg j'; d.textContent='Para o microfone sempre ligado funcionar, clique uma vez em qualquer lugar da página. Se continuar sem ouvir, libere o microfone no cadeado da barra de endereço e marque "Permitir sempre".'; $('chat').appendChild(d); }
+        document.addEventListener('pointerdown',()=>{ needGesture=false; const n=$('needMic'); if(n) n.remove(); startRec(); },{once:true});
+      } else addMsg('j','Não tenho permissão para usar o microfone. Libere o acesso no cadeado da barra de endereço.');
     }
   };
   return r;
 }
 function startRec(){
   if(!SR){ addMsg('j','Seu navegador não suporta reconhecimento de voz. Use o Google Chrome ou o Microsoft Edge.'); return; }
-  if(recActive) return;
+  if(recActive || needGesture) return;
+  try{ rec && rec.abort(); }catch(e){}
   rec = makeRec();
-  try{ rec.start(); recActive=true; if(!wakeMode){ setState('listening'); $('mic').classList.add('on'); } else if(state==='idle') setState('idle','Aguardando "Jarvis"'); }catch(e){}
+  try{ rec.start(); recActive=true; if(!wakeMode){ setState('listening'); $('mic').classList.add('on'); } }catch(e){ recActive=false; }
 }
 function stopRec(){ try{ rec && rec.stop(); }catch(e){} recActive=false; $('mic').classList.remove('on'); }
 function pauseRecognition(){ paused=true; if(recActive){ try{rec.abort();}catch(e){} recActive=false; } }
 function resumeRecognition(){ paused=false; if(wakeMode) setTimeout(startRec,300); else setState('idle'); }
+// vigia: se o reconhecimento morrer sozinho, religa
+setInterval(()=>{ if(wakeMode && !recActive && !paused && !needGesture && !busy && state!=='speaking') startRec(); },4000);
 
 function handleHeard(text){
   if(!wakeMode){ stopRec(); $('mic').classList.remove('on'); $('live').textContent=''; process(text); return; }
-  const m = text.match(/(jarvis|jarbas|jarves|jarvi|djarvis|jarvas|jarvys)[,.!?]?\s*(.*)/i);
-  if(awaitingCmd){ awaitingCmd=false; $('live').textContent=''; process(text); return; }
-  if(m){
-    const cmd = m[2].trim();
-    $('live').textContent='';
-    if(cmd.length>2) process(cmd);
-    else { awaitingCmd=true; beep(880,.08); speak(`Sim, ${cfg.name}?`).then(()=>setState('listening')); setTimeout(()=>{awaitingCmd=false;},9000); }
-  }
+  if(awaitingCmd){ awaitingCmd=false; $('live').textContent=''; const c=findWake(text); process(c!==null && c.length>2 ? c : text); return; }
+  const cmd = findWake(text);
+  if(cmd===null) return;
+  $('live').textContent='';
+  if(cmd.replace(/[^\p{L}\p{N}]/gu,'').length>2) process(cmd);
+  else { beep(880,.08); speak(`Sim, ${cfg.name}?`).then(()=>{ awaitingCmd=true; setState('listening','Pode falar'); setTimeout(()=>{ if(awaitingCmd){ awaitingCmd=false; if(state==='listening') setState('idle'); } },10000); }); }
 }
 
 /* ================= SOM ================= */
@@ -790,7 +815,7 @@ $('mic').onclick=()=>{ speechSynthesis.cancel(); stopAudio(); if(wakeMode){ awai
 cv.onclick=()=>$('mic').click();
 function setAlwaysOn(on, announce=true){
   wakeMode=on; cfg.alwaysOn=on; LS.set('cfg',cfg);
-  $('wake').classList.toggle('on',on); $('wakeLbl').textContent='MIC SEMPRE LIGADO: '+(on?'ON':'OFF');
+  syncWakeUI();
   stopRec();
   if(on){ setTimeout(startRec,200); if(announce) addMsg('j','Microfone sempre ligado. Diga "Jarvis" seguido da pergunta, a qualquer momento.'); if(navigator.wakeLock) navigator.wakeLock.request('screen').catch(()=>{}); }
   else setState('idle');
