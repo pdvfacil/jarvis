@@ -269,7 +269,7 @@ function setState(s, label){
 
 /* ================= VOZ NEURAL (Gemini TTS) + EFEITO ================= */
 const TTS_MODELS=['gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts'];
-let ttsModelIdx=0, curSrc=null, analyser=null, ttsWarned=false;
+let ttsModelIdx=0, curSrc=null, analyser=null;
 function getActx(){ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
 async function geminiTTS(text){
   const prompt=`Leia em português do Brasil, com a voz de um assistente de inteligência artificial sofisticado: calma, grave, educada, confiante, com um toque de humor seco, ritmo natural e sem pressa. Texto: ${text}`;
@@ -277,7 +277,7 @@ async function geminiTTS(text){
     const r=await tfetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODELS[i]}:generateContent`,{method:'POST',
       headers:{'content-type':'application/json','x-goog-api-key':cfg.key},
       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['AUDIO'],
-        speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:cfg.nvoice||'Charon'}}}}})},30000);
+        speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:cfg.nvoice||'Charon'}}}}})},45000);
     const j=await r.json().catch(()=>({}));
     if(r.status===404 || r.status===400 && /model/i.test(j.error?.message||'')){ ttsModelIdx=i+1; continue; }
     if(!r.ok) throw new Error(`TTS HTTP ${r.status} — ${j.error?.message||''}`);
@@ -342,18 +342,42 @@ function cleanForSpeech(t){
           .replace(/[*_#>`~|]/g,'')
           .replace(/\s+/g,' ').trim();
 }
+let lastTtsErr='';
+function splitChunks(t,max=260){
+  const sents=t.match(/[^.!?]+[.!?]*\s*/g)||[t]; const out=[]; let cur='';
+  for(const x of sents){ if((cur+x).length>max && cur){ out.push(cur.trim()); cur=x; } else cur+=x; }
+  if(cur.trim()) out.push(cur.trim()); return out;
+}
+function ttsReason(e){
+  const m=e.message||'';
+  if(/429|quota|RESOURCE_EXHAUSTED/i.test(m)) return 'a cota gratuita da voz neural acabou por agora (o Google limita os pedidos por minuto/dia)';
+  if(/demorou/i.test(m)) return 'o Google demorou demais para gerar o áudio';
+  return m;
+}
 async function speak(text){
   if(!text) return;
   speechSynthesis.cancel(); stopAudio();
+  const clean=cleanForSpeech(text);
   if(cfg.tts==='gemini' && cfg.key && cfg.prov==='gemini'){
-    pauseRecognition(); setState('thinking','Sintetizando voz');
+    pauseRecognition(); setState('thinking','Gerando voz');
+    const chunks=splitChunks(clean.slice(0,2500));
+    let played=0;
     try{
-      const clean=cleanForSpeech(text).slice(0,1500);
-      const buf=await geminiTTS(clean);
-      setState('speaking'); await playBuffer(buf);
-      setState('idle'); resumeRecognition(); return;
+      // gera o próximo trecho enquanto o atual toca
+      let next=geminiTTS(chunks[0]);
+      for(let i=0;i<chunks.length;i++){
+        const buf=await next;
+        if(i+1<chunks.length) next=geminiTTS(chunks[i+1]);
+        setState('speaking','Respondendo · voz '+(cfg.nvoice||'Charon'));
+        await playBuffer(buf); played++;
+      }
+      lastTtsErr=''; setState('idle'); resumeRecognition(); return;
     }catch(e){
-      if(!ttsWarned){ ttsWarned=true; addMsg('j','Voz neural indisponível agora ('+e.message+'). Usando a voz do navegador.'); }
+      const why=ttsReason(e);
+      if(why!==lastTtsErr){ lastTtsErr=why; addMsg('j','⚠ Voz neural ('+(cfg.nvoice||'Charon')+') falhou: '+why+'. Por isso esta resposta saiu com a voz do navegador.'); }
+      const rest=chunks.slice(played).join(' ');
+      if(rest) return speakBrowser(rest);
+      setState('idle'); resumeRecognition(); return;
     }
   }
   return speakBrowser(text);
@@ -365,7 +389,7 @@ function speakBrowser(text){
     pauseRecognition();
     const chunks = cleanForSpeech(text).match(/[^.!?;:]+[.!?;:]*/g) || [text];
     let i=0;
-    setState('speaking');
+    setState('speaking','Respondendo · voz do navegador');
     const next = ()=>{
       if(i>=chunks.length){ setState('idle'); resumeRecognition(); res(); return; }
       const u = new SpeechSynthesisUtterance(chunks[i++].trim());
@@ -753,8 +777,9 @@ $('cConn').onclick=async()=>{
   catch(e){ out.textContent+='\n✗ '+e.message; }
   history=saved;
 };
-$('cTest').onclick=()=>{ readCfg(); ttsWarned=false; getActx(); speak(`Sistemas online. À sua disposição, ${cfg.name}.`); };
-$('cSave').onclick=()=>{ readCfg(); LS.set('cfg',cfg); $('cfg').classList.remove('show'); updateSide(); speak('Configurações salvas.'); };
+$('cTest').onclick=()=>{ readCfg(); lastTtsErr=''; getActx(); speak(`Sistemas online. À sua disposição, ${cfg.name}. Esta é a voz ${cfg.tts==='gemini'?cfg.nvoice:'do navegador'}.`); };
+$('cSave').onclick=()=>{ readCfg(); LS.set('cfg',cfg); lastTtsErr='';
+  if(cfg.tts==='gemini' && (cfg.prov!=='gemini'||!cfg.key)) addMsg('j','⚠ A voz neural só funciona com o cérebro Google Gemini e uma chave salva. Até lá uso a voz do navegador.'); $('cfg').classList.remove('show'); updateSide(); speak('Configurações salvas.'); };
 $('cClear').onclick=()=>{ if(confirm('Apagar configurações, memória e histórico?')){ ['cfg','notes','history'].forEach(k=>localStorage.removeItem('jarvis_'+k)); location.reload(); } };
 $('cfg').onclick=e=>{ if(e.target.id==='cfg') $('cfg').classList.remove('show'); };
 
