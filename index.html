@@ -125,7 +125,31 @@ canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
     <label>Chave da API</label>
     <input id="cKey" type="password" placeholder="Cole sua chave aqui">
     <div class="hint" id="keyHint"></div>
-    <label>Voz</label>
+    <div class="row">
+      <div><label>Motor de voz</label>
+        <select id="cTts"><option value="gemini">Neural Gemini (mais realista)</option><option value="browser">Navegador (instantâneo)</option></select></div>
+      <div><label>Efeito de IA</label>
+        <select id="cFx"><option value="jarvis">Jarvis (leve, metálico)</option><option value="none">Sem efeito</option><option value="forte">Robótico forte</option></select></div>
+    </div>
+    <div id="neuralBox"><label>Voz neural</label>
+    <select id="cNVoice">
+      <option value="Charon">Charon — grave e calma (recomendada)</option>
+      <option value="Iapetus">Iapetus — clara e elegante</option>
+      <option value="Orus">Orus — firme e confiante</option>
+      <option value="Sadaltager">Sadaltager — culta, tom de especialista</option>
+      <option value="Algenib">Algenib — rouca e profunda</option>
+      <option value="Rasalgethi">Rasalgethi — informativa</option>
+      <option value="Schedar">Schedar — equilibrada</option>
+      <option value="Alnilam">Alnilam — firme</option>
+      <option value="Umbriel">Umbriel — tranquila</option>
+      <option value="Enceladus">Enceladus — suave, sussurrada</option>
+      <option value="Fenrir">Fenrir — animada</option>
+      <option value="Puck">Puck — alegre</option>
+      <option value="Kore">Kore — feminina, firme</option>
+      <option value="Aoede">Aoede — feminina, leve</option>
+    </select>
+    <div class="hint">Usa a sua chave do Gemini. Demora 1–3 s a mais para começar a falar. Se falhar, o Jarvis usa a voz do navegador.</div></div>
+    <label id="bVoiceLbl">Voz do navegador</label>
     <select id="cVoice"></select>
     <div class="row">
       <div><label>Velocidade da fala</label><input id="cRate" type="range" min="0.7" max="1.5" step="0.05"></div>
@@ -151,7 +175,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem('jarvis_'+k, JSON.stringify(v)); }catch(e){} }
 };
 const DEFAULT_MODELS = { gemini:'gemini-flash-lite-latest', claude:'claude-sonnet-5-5' };
-let cfg = Object.assign({ name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
+let cfg = Object.assign({ tts:'gemini', nvoice:'Charon', fx:'jarvis', name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
 if(cfg.prov==='gemini' && (/^gemini-(1|2)\./.test(cfg.model) || cfg.model==='gemini-flash-latest')) cfg.model=DEFAULT_MODELS.gemini;
 let notes = LS.get('notes', []);
 let history = LS.get('history', []);   // {role:'user'|'assistant', text}
@@ -167,7 +191,8 @@ function drawCore(){
   const W = cv.width, C = W/2;
   ctx.clearRect(0,0,W,W);
   const t = performance.now()/1000;
-  if(state==='speaking') target = Math.max(target*0.92, 0.25 + Math.abs(Math.sin(t*9))*0.35);
+  if(state==='speaking' && analyser){ const a=new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(a); let m=0; for(const v of a) m+=v; target=Math.min(1,(m/a.length)/90); }
+  else if(state==='speaking') target = Math.max(target*0.92, 0.25 + Math.abs(Math.sin(t*9))*0.35);
   else if(state==='listening') target = 0.3 + Math.sin(t*4)*0.12;
   else if(state==='thinking') target = 0.45;
   else target = 0.08 + Math.sin(t*1.5)*0.04;
@@ -233,6 +258,60 @@ function setState(s, label){
   $('status').textContent = label || L[s];
 }
 
+
+/* ================= VOZ NEURAL (Gemini TTS) + EFEITO ================= */
+const TTS_MODELS=['gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts'];
+let ttsModelIdx=0, curSrc=null, analyser=null, ttsWarned=false;
+function getActx(){ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
+async function geminiTTS(text){
+  const prompt=`Leia em português do Brasil, com a voz de um assistente de inteligência artificial sofisticado: calma, grave, educada, confiante, com um toque de humor seco, ritmo natural e sem pressa. Texto: ${text}`;
+  for(let i=ttsModelIdx;i<TTS_MODELS.length;i++){
+    const r=await tfetch(`https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODELS[i]}:generateContent`,{method:'POST',
+      headers:{'content-type':'application/json','x-goog-api-key':cfg.key},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['AUDIO'],
+        speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:cfg.nvoice||'Charon'}}}}})},30000);
+    const j=await r.json().catch(()=>({}));
+    if(r.status===404 || r.status===400 && /model/i.test(j.error?.message||'')){ ttsModelIdx=i+1; continue; }
+    if(!r.ok) throw new Error(`TTS HTTP ${r.status} — ${j.error?.message||''}`);
+    const part=(j.candidates?.[0]?.content?.parts||[]).find(p=>p.inlineData);
+    if(!part) throw new Error('TTS sem áudio');
+    const rate=+((part.inlineData.mimeType||'').match(/rate=(\d+)/)||[0,24000])[1];
+    const bin=atob(part.inlineData.data), n=bin.length>>1, ac=getActx();
+    const buf=ac.createBuffer(1,n,rate), ch=buf.getChannelData(0);
+    for(let k=0;k<n;k++){ let v=bin.charCodeAt(2*k)|(bin.charCodeAt(2*k+1)<<8); if(v>32767)v-=65536; ch[k]=v/32768; }
+    return buf;
+  }
+  throw new Error('nenhum modelo de voz disponível');
+}
+function playBuffer(buf){
+  return new Promise(res=>{
+    const ac=getActx(), src=ac.createBufferSource(); src.buffer=buf; curSrc=src;
+    const out=ac.createGain(); out.gain.value=1;
+    analyser=ac.createAnalyser(); analyser.fftSize=256;
+    let node=src;
+    if(cfg.fx!=='none'){
+      const forte=cfg.fx==='forte';
+      const hp=ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=forte?300:120;
+      const pres=ac.createBiquadFilter(); pres.type='peaking'; pres.frequency.value=3000; pres.gain.value=forte?6:3;
+      const comp=ac.createDynamicsCompressor(); comp.threshold.value=-20; comp.ratio.value=4;
+      node.connect(hp); hp.connect(pres); pres.connect(comp);
+      // camada metálica: atraso curtíssimo com realimentação (efeito "flanger" sutil)
+      const dl=ac.createDelay(); dl.delayTime.value=forte?0.012:0.006;
+      const fb=ac.createGain(); fb.gain.value=forte?0.55:0.3;
+      const wet=ac.createGain(); wet.gain.value=forte?0.6:0.28;
+      comp.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet);
+      // eco de ambiente bem leve
+      const echo=ac.createDelay(); echo.delayTime.value=0.09; const eg=ac.createGain(); eg.gain.value=forte?0.2:0.1;
+      comp.connect(echo); echo.connect(eg);
+      comp.connect(out); wet.connect(out); eg.connect(out);
+    } else node.connect(out);
+    out.connect(analyser); analyser.connect(ac.destination);
+    src.onended=()=>{ curSrc=null; analyser=null; res(); };
+    src.start();
+  });
+}
+function stopAudio(){ try{ curSrc&&curSrc.stop(); }catch(e){} curSrc=null; }
+
 /* ================= VOZ (saída) ================= */
 let voices = [];
 function loadVoices(){
@@ -255,7 +334,23 @@ function cleanForSpeech(t){
           .replace(/[*_#>`~|]/g,'')
           .replace(/\s+/g,' ').trim();
 }
-function speak(text){
+async function speak(text){
+  if(!text) return;
+  speechSynthesis.cancel(); stopAudio();
+  if(cfg.tts==='gemini' && cfg.key && cfg.prov==='gemini'){
+    pauseRecognition(); setState('thinking','Sintetizando voz');
+    try{
+      const clean=cleanForSpeech(text).slice(0,1500);
+      const buf=await geminiTTS(clean);
+      setState('speaking'); await playBuffer(buf);
+      setState('idle'); resumeRecognition(); return;
+    }catch(e){
+      if(!ttsWarned){ ttsWarned=true; addMsg('j','Voz neural indisponível agora ('+e.message+'). Usando a voz do navegador.'); }
+    }
+  }
+  return speakBrowser(text);
+}
+function speakBrowser(text){
   return new Promise(res=>{
     if(!('speechSynthesis' in window) || !text){ res(); return; }
     speechSynthesis.cancel();
@@ -488,7 +583,7 @@ function localCommand(raw){
     const r=openUrl(`https://www.youtube.com/results?search_query=${encodeURIComponent(m[1])}`,'YouTube: '+m[1]);
     return {say:`Procurando ${m[1]} no YouTube.`, links:[r]};
   }
-  if(/^(pare|para|silencio|cala a boca|chega)$/.test(t)){ speechSynthesis.cancel(); setState('idle'); return {say:'', silent:true}; }
+  if(/^(pare|para|silencio|cala a boca|chega)$/.test(t)){ speechSynthesis.cancel(); stopAudio(); setState('idle'); return {say:'', silent:true}; }
   return null;
 }
 
@@ -614,14 +709,16 @@ function keyHint(){
 }
 function openCfg(){
   $('cName').value=cfg.name; $('cProv').value=cfg.prov; $('cModel').value=cfg.model; $('cKey').value=cfg.key;
-  $('cRate').value=cfg.rate; $('cPitch').value=cfg.pitch; $('cExtra').value=cfg.extra; $('cVoice').value=cfg.voice;
+  $('cTts').value=cfg.tts; $('cNVoice').value=cfg.nvoice; $('cFx').value=cfg.fx; toggleNeural(); $('cRate').value=cfg.rate; $('cPitch').value=cfg.pitch; $('cExtra').value=cfg.extra; $('cVoice').value=cfg.voice;
   keyHint(); $('cfg').classList.add('show');
 }
 function readCfg(){
   cfg.name=$('cName').value.trim()||'senhor'; cfg.prov=$('cProv').value; cfg.model=$('cModel').value.trim()||DEFAULT_MODELS[cfg.prov];
-  cfg.key=$('cKey').value.trim(); cfg.voice=$('cVoice').value; cfg.rate=+$('cRate').value; cfg.pitch=+$('cPitch').value; cfg.extra=$('cExtra').value.trim();
+  cfg.key=$('cKey').value.trim(); cfg.voice=$('cVoice').value; cfg.rate=+$('cRate').value; cfg.pitch=+$('cPitch').value; cfg.extra=$('cExtra').value.trim(); cfg.tts=$('cTts').value; cfg.nvoice=$('cNVoice').value; cfg.fx=$('cFx').value;
 }
+function toggleNeural(){ const n=$('cTts').value==='gemini'; $('neuralBox').style.display=n?'':'none'; }
 $('openCfg').onclick=openCfg;
+$('cTts').onchange=toggleNeural;
 $('cProv').onchange=()=>{ $('cModel').value=DEFAULT_MODELS[$('cProv').value]; keyHint(); };
 $('cConn').onclick=async()=>{
   readCfg(); const out=$('connOut'); out.style.color='var(--warn)'; out.textContent='Testando...';
@@ -641,7 +738,7 @@ $('cConn').onclick=async()=>{
   catch(e){ out.textContent+='\n✗ '+e.message; }
   history=saved;
 };
-$('cTest').onclick=()=>{ readCfg(); speak(`Sistemas online. À sua disposição, ${cfg.name}.`); };
+$('cTest').onclick=()=>{ readCfg(); ttsWarned=false; getActx(); speak(`Sistemas online. À sua disposição, ${cfg.name}.`); };
 $('cSave').onclick=()=>{ readCfg(); LS.set('cfg',cfg); $('cfg').classList.remove('show'); updateSide(); speak('Configurações salvas.'); };
 $('cClear').onclick=()=>{ if(confirm('Apagar configurações, memória e histórico?')){ ['cfg','notes','history'].forEach(k=>localStorage.removeItem('jarvis_'+k)); location.reload(); } };
 $('cfg').onclick=e=>{ if(e.target.id==='cfg') $('cfg').classList.remove('show'); };
@@ -649,7 +746,7 @@ $('cfg').onclick=e=>{ if(e.target.id==='cfg') $('cfg').classList.remove('show');
 /* ================= UI ================= */
 $('send').onclick=()=>{ const v=$('txt').value; $('txt').value=''; process(v); };
 $('txt').onkeydown=e=>{ if(e.key==='Enter'){ $('send').click(); } };
-$('mic').onclick=()=>{ speechSynthesis.cancel(); if(wakeMode){ awaitingCmd=true; beep(880,.08); setState('listening'); return; } recActive? stopRec() : startRec(); };
+$('mic').onclick=()=>{ speechSynthesis.cancel(); stopAudio(); if(wakeMode){ awaitingCmd=true; beep(880,.08); setState('listening'); return; } recActive? stopRec() : startRec(); };
 cv.onclick=()=>$('mic').click();
 $('wake').onclick=()=>{
   wakeMode=!wakeMode; $('wake').classList.toggle('on',wakeMode);
