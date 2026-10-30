@@ -472,10 +472,14 @@ async function askBrain(userText){
   try{ return await askBrainRaw(userText); }
   catch(e){ if(e instanceof TypeError) throw new Error('Falha de rede/CORS ('+e.message+'). Verifique internet, bloqueador de anúncios ou extensão do navegador.'); throw e; }
 }
+function tfetch(url,opt,ms=25000){
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms);
+  return fetch(url,{...opt,signal:c.signal}).catch(e=>{ if(e.name==='AbortError') throw new Error('O servidor demorou mais de '+(ms/1000)+'s para responder.'); throw e; }).finally(()=>clearTimeout(t));
+}
 async function askBrainRaw(userText){
   const msgs = history.slice(-16);
   if(cfg.prov==='claude'){
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
+    const r = await tfetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':cfg.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:cfg.model||DEFAULT_MODELS.claude,max_tokens:1024,system:systemPrompt(),
@@ -491,13 +495,13 @@ async function askBrainRaw(userText){
   const body = {
     systemInstruction:{parts:[{text:systemPrompt()}]},
     contents: msgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.text}]})),
-    generationConfig:{temperature:.7,maxOutputTokens:1024}
+    generationConfig:{temperature:.7,maxOutputTokens:4096}
   };
-  let r = await fetch(url,{method:'POST',headers:gh,body:JSON.stringify({...body,tools:[{google_search:{}}]})});
-  if(!r.ok) r = await fetch(url,{method:'POST',headers:gh,body:JSON.stringify(body)});
+  let r; try{ r = await tfetch(url,{method:'POST',headers:gh,body:JSON.stringify({...body,tools:[{google_search:{}}]})},20000); }catch(e){ r={ok:false,status:0}; }
+  if(!r.ok && r.status!==401 && r.status!==403) r = await tfetch(url,{method:'POST',headers:gh,body:JSON.stringify(body)});
   if(!r.ok && r.status===404 && cfg.model!==DEFAULT_MODELS.gemini){
     cfg.model=DEFAULT_MODELS.gemini; LS.set('cfg',cfg);
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,{method:'POST',headers:gh,body:JSON.stringify(body)});
+    r = await tfetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,{method:'POST',headers:gh,body:JSON.stringify(body)});
   }
   let j; try{ j = await r.json(); }catch(e){ j={}; }
   if(!r.ok) throw new Error(`HTTP ${r.status} ${j.error?.status||''} — ${j.error?.message||JSON.stringify(j).slice(0,300)}`);
