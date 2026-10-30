@@ -51,6 +51,7 @@ canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
 .btn{height:54px;min-width:54px;padding:0 18px;border-radius:30px;border:1px solid var(--c);background:rgba(41,227,255,.08);color:var(--c);cursor:pointer;font-size:15px;font-family:Consolas,monospace;letter-spacing:.1em}
 .btn:hover{background:rgba(41,227,255,.2)}
 #mic.on{background:var(--c);color:#002;box-shadow:0 0 22px var(--c)}
+#wake{white-space:nowrap}
 #wake.on{border-color:var(--warn);color:var(--warn);box-shadow:0 0 14px rgba(255,176,32,.5)}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
 .modal.show{display:flex}
@@ -61,7 +62,14 @@ canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
 .hint{font-size:12px;color:#7fb5c7;margin-top:6px;line-height:1.4}
 .hint a{color:var(--c)}
 @media (max-width:1000px){
-  .app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr 74px}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:56px auto minmax(0,1fr) auto;padding:8px;gap:8px}
+  .bottom{flex-wrap:wrap}
+  #wake{order:-1;width:100%;font-size:12px;height:40px}
+  #txt{min-width:0}
+  .hclock small{display:none}
+  .logo small{display:none}
+  .logo{letter-spacing:.2em;font-size:16px}
+  .hclock{font-size:16px}
   .side{display:none}
   canvas#core{width:min(70vw,300px)}
   #chatPanel{min-height:0}
@@ -105,7 +113,7 @@ canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
   </aside>
 
   <div class="bottom">
-    <button class="btn" id="wake" title="Escuta contínua — diga 'Jarvis' para ativar">◉ <span class="hide-m">JARVIS</span></button>
+    <button class="btn" id="wake" title="Microfone sempre ligado — diga 'Jarvis' a qualquer momento">🎙 <span id="wakeLbl">MIC SEMPRE LIGADO: OFF</span></button>
     <input id="txt" placeholder="Digite um comando ou toque no microfone..." autocomplete="off">
     <button class="btn" id="mic" title="Falar">🎙</button>
     <button class="btn" id="send">➤</button>
@@ -175,7 +183,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem('jarvis_'+k, JSON.stringify(v)); }catch(e){} }
 };
 const DEFAULT_MODELS = { gemini:'gemini-flash-lite-latest', claude:'claude-sonnet-5-5' };
-let cfg = Object.assign({ tts:'gemini', nvoice:'Charon', fx:'jarvis', name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
+let cfg = Object.assign({ alwaysOn:false, tts:'gemini', nvoice:'Charon', fx:'jarvis', name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
 if(cfg.prov==='gemini' && (/^gemini-(1|2)\./.test(cfg.model) || cfg.model==='gemini-flash-latest')) cfg.model=DEFAULT_MODELS.gemini;
 let notes = LS.get('notes', []);
 let history = LS.get('history', []);   // {role:'user'|'assistant', text}
@@ -384,7 +392,7 @@ function makeRec(){
       const tr = e.results[i][0].transcript;
       if(e.results[i].isFinal) final += tr; else interim += tr;
     }
-    if(!wakeMode || awaitingCmd || /jarvis|jarbas|jarves/i.test(interim+final)) $('live').textContent = (final||interim);
+    if(!wakeMode || awaitingCmd || /jarvis|jarbas|jarves|jarvi|djarvis|jarvas|jarvys/i.test(interim+final)) $('live').textContent = (final||interim);
     if(final) handleHeard(final.trim());
   };
   r.onend = ()=>{
@@ -412,7 +420,7 @@ function resumeRecognition(){ paused=false; if(wakeMode) setTimeout(startRec,300
 
 function handleHeard(text){
   if(!wakeMode){ stopRec(); $('mic').classList.remove('on'); $('live').textContent=''; process(text); return; }
-  const m = text.match(/(jarvis|jarbas|jarves)[,.!]?\s*(.*)/i);
+  const m = text.match(/(jarvis|jarbas|jarves|jarvi|djarvis|jarvas|jarvys)[,.!?]?\s*(.*)/i);
   if(awaitingCmd){ awaitingCmd=false; $('live').textContent=''; process(text); return; }
   if(m){
     const cmd = m[2].trim();
@@ -592,7 +600,14 @@ function systemPrompt(){
   const now=new Date();
   return `Você é J.A.R.V.I.S., o assistente pessoal de inteligência artificial do usuário, inspirado no assistente do Homem de Ferro.
 Personalidade: educado, elegante, levemente irônico com humor britânico, extremamente competente e leal. Chame o usuário de "${cfg.name}".
-Responda SEMPRE em português do Brasil. Suas respostas serão FALADAS em voz alta: seja direto e curto (1 a 3 frases) a menos que peçam detalhes. Evite listas longas, markdown e emojis.
+Responda SEMPRE em português do Brasil. Suas respostas serão FALADAS em voz alta, então escreva como se estivesse falando: sem markdown, sem listas com marcadores, sem emojis.
+COMO RESPONDER:
+- Comece já com a resposta direta na primeira frase (o número, o nome, o sim/não, a recomendação). Nada de introduções como "Claro!", "Ótima pergunta" ou "Vou verificar".
+- Em seguida explique o essencial em 2 a 5 frases: o porquê, os dados concretos (valores, datas, nomes, lugares) e o que isso significa na prática para o usuário.
+- Nunca dê respostas genéricas ou vagas. Se a pergunta depende de informação atual (notícias, preços, resultados, horários, lançamentos), PESQUISE no Google e cite os fatos específicos que encontrou, dizendo de onde vieram quando for relevante.
+- Se faltar um dado essencial para responder bem, diga o que falta e faça UMA pergunta objetiva.
+- Se não souber ou não encontrar, diga claramente em vez de inventar.
+- Só seja mais longo se o usuário pedir detalhes ou se o assunto realmente exigir.
 Data e hora atuais: ${now.toLocaleString('pt-BR',{dateStyle:'full',timeStyle:'short'})}.
 ${cfg.extra?'Sobre o usuário: '+cfg.extra+'\n':''}${notes.length?'Coisas que o usuário pediu para você lembrar:\n- '+notes.join('\n- ')+'\n':''}
 Você pode executar ações incluindo, no FINAL da resposta, uma ou mais tags (elas não serão faladas):
@@ -748,12 +763,14 @@ $('send').onclick=()=>{ const v=$('txt').value; $('txt').value=''; process(v); }
 $('txt').onkeydown=e=>{ if(e.key==='Enter'){ $('send').click(); } };
 $('mic').onclick=()=>{ speechSynthesis.cancel(); stopAudio(); if(wakeMode){ awaitingCmd=true; beep(880,.08); setState('listening'); return; } recActive? stopRec() : startRec(); };
 cv.onclick=()=>$('mic').click();
-$('wake').onclick=()=>{
-  wakeMode=!wakeMode; $('wake').classList.toggle('on',wakeMode);
+function setAlwaysOn(on, announce=true){
+  wakeMode=on; cfg.alwaysOn=on; LS.set('cfg',cfg);
+  $('wake').classList.toggle('on',on); $('wakeLbl').textContent='MIC SEMPRE LIGADO: '+(on?'ON':'OFF');
   stopRec();
-  if(wakeMode){ setTimeout(startRec,200); addMsg('j','Escuta contínua ativada. Diga "Jarvis" seguido do comando.'); }
+  if(on){ setTimeout(startRec,200); if(announce) addMsg('j','Microfone sempre ligado. Diga "Jarvis" seguido da pergunta, a qualquer momento.'); if(navigator.wakeLock) navigator.wakeLock.request('screen').catch(()=>{}); }
   else setState('idle');
-};
+}
+$('wake').onclick=()=>setAlwaysOn(!wakeMode);
 document.addEventListener('keydown',e=>{ if(e.code==='Space' && document.activeElement!==$('txt') && !$('cfg').classList.contains('show')){ e.preventDefault(); $('mic').click(); } });
 
 function updateSide(){
@@ -777,6 +794,8 @@ if(navigator.getBattery) navigator.getBattery().then(b=>{
 
 /* ================= BOOT ================= */
 updateSide(); renderNotes(); renderTimers();
+if(cfg.alwaysOn) setTimeout(()=>setAlwaysOn(true,false),600);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && wakeMode && !recActive && !paused) startRec(); });
 history.slice(-10).forEach(m=>addMsg(m.role==='user'?'u':'j',m.text));
 setState('idle');
 const h=new Date().getHours();
