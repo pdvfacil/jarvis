@@ -407,10 +407,50 @@ function parseDuration(s){
   return total;
 }
 
+
+/* ================= CLIMA (Open-Meteo, grátis, sem chave) ================= */
+const WMO={0:'céu limpo',1:'predominantemente limpo',2:'parcialmente nublado',3:'nublado',45:'neblina',48:'neblina',51:'garoa fraca',53:'garoa',55:'garoa forte',61:'chuva fraca',63:'chuva',65:'chuva forte',66:'chuva congelante',67:'chuva congelante',71:'neve fraca',73:'neve',75:'neve forte',80:'pancadas de chuva fracas',81:'pancadas de chuva',82:'pancadas de chuva fortes',95:'trovoadas',96:'trovoadas com granizo',99:'trovoadas com granizo'};
+function getPosition(){
+  return new Promise((res,rej)=>{
+    const c=LS.get('loc',null);
+    if(c && Date.now()-c.t < 6*3600e3) return res(c);
+    if(!navigator.geolocation) return rej(new Error('sem localização'));
+    navigator.geolocation.getCurrentPosition(p=>{ const v={lat:p.coords.latitude,lon:p.coords.longitude,name:'',t:Date.now()}; LS.set('loc',v); res(v); },
+      ()=> c ? res(c) : rej(new Error('localização negada')), {timeout:10000,maximumAge:3600e3});
+  });
+}
+async function geocode(city){
+  const r=await tfetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name='+encodeURIComponent(city),{},10000);
+  const j=await r.json(); const g=j.results&&j.results[0];
+  if(!g) throw new Error('cidade não encontrada');
+  return {lat:g.latitude,lon:g.longitude,name:g.name+(g.admin1?', '+g.admin1:'')};
+}
+async function weather(raw){
+  const t=raw.toLowerCase();
+  const cm=raw.match(/\b(?:em|no|na|de)\s+([A-ZÀ-Úa-zà-ú][\wÀ-ú\s'-]{2,40}?)(?:\s+(?:hoje|amanh[ãa]|agora|essa semana|esta semana))?[?.!]*$/i);
+  let loc;
+  const ignore=/^(hoje|amanh[ãa]|agora|tempo|clima|semana)$/i;
+  if(cm && !ignore.test(cm[1].trim())) loc=await geocode(cm[1].trim()); else loc=await getPosition();
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,relative_humidity_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7`;
+  const j=await (await tfetch(u,{},10000)).json();
+  const where=loc.name?` em ${loc.name}`:'';
+  const d=j.daily, fmt=n=>Math.round(n);
+  const day=i=>`máxima de ${fmt(d.temperature_2m_max[i])} e mínima de ${fmt(d.temperature_2m_min[i])} graus, ${WMO[d.weather_code[i]]||'tempo variável'}, com ${d.precipitation_probability_max[i]??0}% de chance de chuva`;
+  if(/semana|pr[óo]ximos dias/.test(t)){
+    const dias=[1,2,3,4,5].map(i=>{const dt=new Date(d.time[i]+'T12:00');return `${dt.toLocaleDateString('pt-BR',{weekday:'long'})}: ${fmt(d.temperature_2m_min[i])} a ${fmt(d.temperature_2m_max[i])} graus, ${WMO[d.weather_code[i]]||''}, chuva ${d.precipitation_probability_max[i]??0}%`;});
+    return `Previsão para os próximos dias${where}. `+dias.join('. ')+'.';
+  }
+  if(/amanh/.test(t)) return `Amanhã${where}: ${day(1)}.`;
+  const c=j.current;
+  return `Agora${where} faz ${fmt(c.temperature_2m)} graus, sensação de ${fmt(c.apparent_temperature)}, ${WMO[c.weather_code]||''}. Hoje, ${day(0)}.`;
+}
+
 /* ================= COMANDOS LOCAIS (sem internet/IA) ================= */
 function localCommand(raw){
   const t = raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
   const now = new Date();
+  if(/(previsao|clima|tempo (hoje|amanha|agora|essa semana|esta semana|em|no|na|la fora|ta|esta)|vai chover|esta chovendo|temperatura|quantos graus|faz frio|faz calor|ta calor|ta frio)/.test(t) && !/timer|cronometro|quanto tempo/.test(t))
+    return {async:()=>weather(raw)};
   if(/^(que horas|qual (e )?a hora|horas)/.test(t))
     return {say:`São ${now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}, ${cfg.name}.`};
   if(/(que dia e hoje|qual (e )?a data|data de hoje)/.test(t))
@@ -465,7 +505,7 @@ Você pode executar ações incluindo, no FINAL da resposta, uma ou mais tags (e
 [[TIMER:segundos|rótulo]] — cria um timer/lembrete
 [[ANOTAR:texto]] — salva algo permanente na memória
 [[ESQUECER:número]] — remove a anotação de número N (começando em 1)
-Use as tags apenas quando o usuário pedir algo do tipo. Nunca invente que executou algo sem usar a tag.`;
+REGRA IMPORTANTE: use [[ABRIR]] SOMENTE quando o usuário pedir explicitamente para abrir, acessar, mostrar ou tocar algo. Para perguntas (clima, notícias, preços, resultados, fatos), pesquise você mesmo e RESPONDA EM VOZ com a informação — nunca abra uma página no lugar de responder. Nunca invente que executou algo sem usar a tag.`;
 }
 
 async function askBrain(userText){
@@ -511,12 +551,13 @@ async function askBrainRaw(userText){
   return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').trim() || 'Não obtive resposta, '+cfg.name+'.';
 }
 
-function runActions(text){
+function runActions(text, userText=''){
+  const askedOpen=/\b(abr[aei]|abrir|acess|entr[ae]|toc[aq]|toque|coloc|mostr|link|site|p[áa]gina|v[íi]deo)/i.test(userText);
   const links=[];
   text = text.replace(/\[\[(ABRIR|TIMER|ANOTAR|ESQUECER):([^\]]*)\]\]/gi,(_,type,arg)=>{
     type=type.toUpperCase();
     const [a,b]=arg.split('|').map(s=>s&&s.trim());
-    if(type==='ABRIR' && /^https?:\/\//.test(a)) links.push(openUrl(a,b));
+    if(type==='ABRIR' && /^https?:\/\//.test(a)){ if(askedOpen) links.push(openUrl(a,b)); else links.push({url:a,label:b||'ver fonte'}); }
     if(type==='TIMER' && +a>0) addTimer(+a,b);
     if(type==='ANOTAR' && a){ notes.push(a); LS.set('notes',notes); renderNotes(); }
     if(type==='ESQUECER' && +a>0){ notes.splice(+a-1,1); LS.set('notes',notes); renderNotes(); }
@@ -531,6 +572,12 @@ async function process(text){
   text=(text||'').trim(); if(!text||busy) return;
   addMsg('u',text);
   const local = localCommand(text);
+  if(local && local.async){
+    setState('thinking','Consultando');
+    try{ const say=await local.async(); addMsg('j',say); remember('user',text); remember('assistant',say); await speak(say); }
+    catch(e){ const m='Não consegui obter a previsão: '+e.message+'. Se for a localização, permita o acesso no cadeado da barra de endereço, ou diga a cidade, por exemplo: previsão do tempo em Niterói.'; addMsg('j',m); setState('idle'); speak(m); }
+    return;
+  }
   if(local){
     if(local.silent) return;
     addMsg('j',local.say,local.links||[]);
@@ -545,7 +592,7 @@ async function process(text){
   remember('user',text);
   try{
     const raw = await askBrain(text);
-    const {text:clean,links} = runActions(raw);
+    const {text:clean,links} = runActions(raw, text);
     const shown = clean || 'Feito.';
     addMsg('j',shown,links);
     remember('assistant',shown);
