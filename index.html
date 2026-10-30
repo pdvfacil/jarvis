@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#02070d">
+<title>J.A.R.V.I.S.</title>
+<style>
+:root{
+  --c:#29e3ff; --c2:#0fa8c9; --dim:#0b3a4a; --bg:#02070d; --panel:rgba(6,24,36,.72);
+  --warn:#ffb020; --red:#ff3b5c; --txt:#cfefff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:"Segoe UI",Roboto,system-ui,sans-serif;overflow:hidden}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(41,227,255,.08),transparent 60%),
+  repeating-linear-gradient(0deg,rgba(41,227,255,.035) 0 1px,transparent 1px 3px);z-index:0}
+.app{position:relative;z-index:1;display:grid;grid-template-columns:260px 1fr 380px;grid-template-rows:56px 1fr 84px;height:100%;gap:12px;padding:12px}
+header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--dim);padding:0 6px}
+.logo{font-family:Consolas,monospace;letter-spacing:.45em;color:var(--c);font-size:20px;text-shadow:0 0 12px var(--c)}
+.logo small{letter-spacing:.15em;font-size:10px;color:var(--c2);display:block}
+.hclock{font-family:Consolas,monospace;color:var(--c);font-size:22px;text-align:right}
+.hclock small{display:block;font-size:11px;color:var(--c2);letter-spacing:.1em}
+.icon-btn{background:none;border:1px solid var(--dim);color:var(--c);width:38px;height:38px;border-radius:50%;cursor:pointer;font-size:17px;margin-left:12px}
+.icon-btn:hover{border-color:var(--c);box-shadow:0 0 10px var(--c)}
+.panel{background:var(--panel);border:1px solid var(--dim);border-radius:6px;padding:14px;overflow:auto;position:relative}
+.panel::before,.panel::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--c)}
+.panel::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.panel::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.panel h3{font-family:Consolas,monospace;font-size:11px;letter-spacing:.25em;color:var(--c2);margin:4px 0 10px;text-transform:uppercase}
+.stat{display:flex;justify-content:space-between;font-family:Consolas,monospace;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--dim)}
+.stat b{color:var(--c);font-weight:normal}
+.bar{height:4px;background:var(--dim);margin:4px 0 10px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--c);box-shadow:0 0 8px var(--c);width:0;transition:width .6s}
+.list{font-size:13px;line-height:1.4}
+.list li{list-style:none;padding:6px 8px;margin-bottom:6px;border-left:2px solid var(--c2);background:rgba(41,227,255,.05);display:flex;justify-content:space-between;gap:6px}
+.list li button{background:none;border:0;color:var(--red);cursor:pointer}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
+#status{font-family:Consolas,monospace;letter-spacing:.3em;color:var(--c);font-size:13px;margin-top:4px;text-transform:uppercase;min-height:18px}
+#live{font-size:15px;color:#9fdcf0;min-height:22px;margin-top:8px;text-align:center;max-width:90%;font-style:italic}
+.chat{display:flex;flex-direction:column;gap:10px}
+.msg{padding:10px 12px;border-radius:6px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+.msg.u{align-self:flex-end;background:rgba(41,227,255,.12);border:1px solid var(--dim);max-width:88%}
+.msg.j{align-self:flex-start;background:rgba(0,0,0,.35);border-left:2px solid var(--c);max-width:95%}
+.msg.j::before{content:"JARVIS";display:block;font-family:Consolas,monospace;font-size:10px;letter-spacing:.2em;color:var(--c2);margin-bottom:4px}
+.msg a.act{display:inline-block;margin-top:8px;padding:6px 10px;border:1px solid var(--c);color:var(--c);text-decoration:none;border-radius:4px;font-size:12px}
+.bottom{grid-column:1/-1;display:flex;gap:10px;align-items:center}
+#txt{flex:1;height:54px;background:var(--panel);border:1px solid var(--dim);color:var(--txt);font-size:16px;padding:0 18px;border-radius:30px;outline:none}
+#txt:focus{border-color:var(--c);box-shadow:0 0 12px rgba(41,227,255,.3)}
+.btn{height:54px;min-width:54px;padding:0 18px;border-radius:30px;border:1px solid var(--c);background:rgba(41,227,255,.08);color:var(--c);cursor:pointer;font-size:15px;font-family:Consolas,monospace;letter-spacing:.1em}
+.btn:hover{background:rgba(41,227,255,.2)}
+#mic.on{background:var(--c);color:#002;box-shadow:0 0 22px var(--c)}
+#wake.on{border-color:var(--warn);color:var(--warn);box-shadow:0 0 14px rgba(255,176,32,.5)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
+.modal.show{display:flex}
+.modal .panel{width:min(520px,100%);max-height:92vh}
+.modal label{display:block;font-size:12px;color:var(--c2);margin:12px 0 4px;letter-spacing:.08em}
+.modal input,.modal select{width:100%;background:#031420;border:1px solid var(--dim);color:var(--txt);padding:10px;border-radius:4px;font-size:14px}
+.modal .row{display:flex;gap:10px}.modal .row>*{flex:1}
+.hint{font-size:12px;color:#7fb5c7;margin-top:6px;line-height:1.4}
+.hint a{color:var(--c)}
+@media (max-width:1000px){
+  .app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr 74px}
+  .side{display:none}
+  canvas#core{width:min(70vw,300px)}
+  #chatPanel{min-height:0}
+  .btn{height:48px;min-width:48px;padding:0 12px}#txt{height:48px}
+  .hide-m{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">J.A.R.V.I.S.<small>Just A Rather Very Intelligent System</small></div>
+    <div style="display:flex;align-items:center">
+      <div class="hclock"><span id="clock">--:--:--</span><small id="date">—</small></div>
+      <button class="icon-btn" id="openCfg" title="Configurações">⚙</button>
+    </div>
+  </header>
+
+  <aside class="panel side">
+    <h3>Sistema</h3>
+    <div class="stat"><span>Status</span><b id="sOnline">—</b></div>
+    <div class="stat"><span>Cérebro</span><b id="sBrain">—</b></div>
+    <div class="stat"><span>Bateria</span><b id="sBat">—</b></div>
+    <div class="bar"><i id="batBar"></i></div>
+    <div class="stat"><span>Tempo ativo</span><b id="sUp">00:00</b></div>
+    <h3 style="margin-top:20px">Timers</h3>
+    <ul class="list" id="timers"><li style="border-color:var(--dim);opacity:.6">Nenhum timer ativo</li></ul>
+    <h3 style="margin-top:20px">Memória</h3>
+    <ul class="list" id="notes"></ul>
+  </aside>
+
+  <section class="center">
+    <canvas id="core" width="1000" height="1000" title="Toque para falar"></canvas>
+    <div id="status">Inicializando</div>
+    <div id="live"></div>
+  </section>
+
+  <aside class="panel" id="chatPanel">
+    <h3>Registro</h3>
+    <div class="chat" id="chat"></div>
+  </aside>
+
+  <div class="bottom">
+    <button class="btn" id="wake" title="Escuta contínua — diga 'Jarvis' para ativar">◉ <span class="hide-m">JARVIS</span></button>
+    <input id="txt" placeholder="Digite um comando ou toque no microfone..." autocomplete="off">
+    <button class="btn" id="mic" title="Falar">🎙</button>
+    <button class="btn" id="send">➤</button>
+  </div>
+</div>
+
+<div class="modal" id="cfg">
+  <div class="panel">
+    <h3>Configurações</h3>
+    <label>Como o Jarvis deve te chamar</label>
+    <input id="cName" placeholder="senhor">
+    <div class="row">
+      <div><label>Cérebro (IA)</label>
+        <select id="cProv"><option value="gemini">Google Gemini (grátis)</option><option value="claude">Anthropic Claude</option></select></div>
+      <div><label>Modelo</label><input id="cModel"></div>
+    </div>
+    <label>Chave da API</label>
+    <input id="cKey" type="password" placeholder="Cole sua chave aqui">
+    <div class="hint" id="keyHint"></div>
+    <label>Voz</label>
+    <select id="cVoice"></select>
+    <div class="row">
+      <div><label>Velocidade da fala</label><input id="cRate" type="range" min="0.7" max="1.5" step="0.05"></div>
+      <div><label>Tom</label><input id="cPitch" type="range" min="0.5" max="1.5" step="0.05"></div>
+    </div>
+    <label>Personalidade extra (opcional)</label>
+    <input id="cExtra" placeholder="Ex.: sou dono da Jaylson Store, vendo produtos Apple...">
+    <div class="row" style="margin-top:18px">
+      <button class="btn" id="cTest">Testar voz</button>
+      <button class="btn" id="cClear" style="border-color:var(--red);color:var(--red)">Apagar tudo</button>
+      <button class="btn" id="cSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= ESTADO ================= */
+const $ = id => document.getElementById(id);
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem('jarvis_'+k); return v===null ? d : JSON.parse(v);}catch(e){return d;} },
+  set(k, v){ try{ localStorage.setItem('jarvis_'+k, JSON.stringify(v)); }catch(e){} }
+};
+const DEFAULT_MODELS = { gemini:'gemini-2.5-flash', claude:'claude-sonnet-5-5' };
+let cfg = Object.assign({ name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
+let notes = LS.get('notes', []);
+let history = LS.get('history', []);   // {role:'user'|'assistant', text}
+let timers = [];
+let state = 'idle';   // idle | listening | thinking | speaking
+let level = 0, target = 0;
+const startT = Date.now();
+
+/* ================= HUD (núcleo animado) ================= */
+const cv = $('core'), ctx = cv.getContext('2d');
+let rot = 0;
+function drawCore(){
+  const W = cv.width, C = W/2;
+  ctx.clearRect(0,0,W,W);
+  const t = performance.now()/1000;
+  if(state==='speaking') target = Math.max(target*0.92, 0.25 + Math.abs(Math.sin(t*9))*0.35);
+  else if(state==='listening') target = 0.3 + Math.sin(t*4)*0.12;
+  else if(state==='thinking') target = 0.45;
+  else target = 0.08 + Math.sin(t*1.5)*0.04;
+  level += (target-level)*0.15;
+  const spd = state==='thinking' ? 3.2 : state==='idle' ? 0.5 : 1.4;
+  rot += 0.01*spd;
+  const col = state==='thinking' ? '255,176,32' : '41,227,255';
+  ctx.lineCap='round';
+  ctx.shadowColor=`rgba(${col},1)`;
+
+  // anéis segmentados
+  const rings = [
+    {r:430,w:3,seg:72,gap:.5,dir:1,sp:.3,a:.35},
+    {r:395,w:10,seg:12,gap:.25,dir:-1,sp:.6,a:.6},
+    {r:355,w:2,seg:1,gap:0,dir:1,sp:0,a:.3},
+    {r:330,w:18,seg:40,gap:.45,dir:1,sp:1,a:.5},
+    {r:285,w:4,seg:3,gap:.3,dir:-1,sp:1.6,a:.8},
+    {r:250,w:2,seg:120,gap:.6,dir:1,sp:.2,a:.4},
+  ];
+  rings.forEach((R,i)=>{
+    ctx.strokeStyle=`rgba(${col},${R.a})`;
+    ctx.lineWidth=R.w; ctx.shadowBlur=12;
+    const step = Math.PI*2/R.seg, off = rot*R.sp*R.dir + i;
+    const r = R.r*(1+level*0.04*(i%2?1:-1));
+    for(let s=0;s<R.seg;s++){
+      const a0 = off+s*step, a1 = a0+step*(1-R.gap);
+      ctx.beginPath(); ctx.arc(C,C,r,a0,a1); ctx.stroke();
+    }
+  });
+  // ondas de áudio radiais
+  ctx.shadowBlur=8; ctx.strokeStyle=`rgba(${col},.85)`; ctx.lineWidth=4;
+  const N=90;
+  for(let i=0;i<N;i++){
+    const a=i/N*Math.PI*2;
+    const amp = 18 + level*120*(0.5+0.5*Math.sin(a*6+t*8)*Math.cos(a*3-t*5));
+    const r0=200, r1=r0+Math.max(4,amp);
+    ctx.beginPath();
+    ctx.moveTo(C+Math.cos(a)*r0,C+Math.sin(a)*r0);
+    ctx.lineTo(C+Math.cos(a)*r1,C+Math.sin(a)*r1);
+    ctx.stroke();
+  }
+  // núcleo
+  const g = ctx.createRadialGradient(C,C,10,C,C,190);
+  g.addColorStop(0,`rgba(255,255,255,${.85})`);
+  g.addColorStop(.25,`rgba(${col},${.55+level*.4})`);
+  g.addColorStop(.7,`rgba(${col},.08)`);
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.shadowBlur=0; ctx.fillStyle=g;
+  ctx.beginPath(); ctx.arc(C,C,190,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=`rgba(${col},.9)`; ctx.lineWidth=3; ctx.shadowBlur=20;
+  ctx.beginPath(); ctx.arc(C,C,120+level*30,0,Math.PI*2); ctx.stroke();
+  // triângulo interno (reator)
+  ctx.lineWidth=2; ctx.beginPath();
+  for(let k=0;k<3;k++){const a=-Math.PI/2+k*2*Math.PI/3+rot*.4;ctx.lineTo(C+Math.cos(a)*95,C+Math.sin(a)*95);}
+  ctx.closePath(); ctx.stroke();
+  requestAnimationFrame(drawCore);
+}
+requestAnimationFrame(drawCore);
+
+function setState(s, label){
+  state = s;
+  const L = {idle:'Online', listening:'Ouvindo', thinking:'Processando', speaking:'Respondendo'};
+  $('status').textContent = label || L[s];
+}
+
+/* ================= VOZ (saída) ================= */
+let voices = [];
+function loadVoices(){
+  voices = speechSynthesis.getVoices();
+  const sel = $('cVoice'); sel.innerHTML='';
+  const pt = voices.filter(v=>/^pt/i.test(v.lang));
+  const list = pt.length ? pt : voices;
+  list.forEach(v=>{const o=document.createElement('option');o.value=v.name;o.textContent=`${v.name} (${v.lang})`;sel.appendChild(o);});
+  if(!cfg.voice || !voices.find(v=>v.name===cfg.voice)){
+    const pref = pt.find(v=>/antonio|daniel|natural.*male|google português/i.test(v.name)) || pt.find(v=>/brasil|pt-BR/i.test(v.name+v.lang)) || pt[0];
+    if(pref) cfg.voice = pref.name;
+  }
+  sel.value = cfg.voice;
+}
+if('speechSynthesis' in window){ loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+function cleanForSpeech(t){
+  return t.replace(/```[\s\S]*?```/g,' código na tela. ')
+          .replace(/https?:\/\/\S+/g,'link na tela')
+          .replace(/[*_#>`~|]/g,'')
+          .replace(/\s+/g,' ').trim();
+}
+function speak(text){
+  return new Promise(res=>{
+    if(!('speechSynthesis' in window) || !text){ res(); return; }
+    speechSynthesis.cancel();
+    pauseRecognition();
+    const chunks = cleanForSpeech(text).match(/[^.!?;:]+[.!?;:]*/g) || [text];
+    let i=0;
+    setState('speaking');
+    const next = ()=>{
+      if(i>=chunks.length){ setState('idle'); resumeRecognition(); res(); return; }
+      const u = new SpeechSynthesisUtterance(chunks[i++].trim());
+      const v = voices.find(v=>v.name===cfg.voice); if(v){u.voice=v;u.lang=v.lang;} else u.lang='pt-BR';
+      u.rate = +cfg.rate; u.pitch = +cfg.pitch;
+      u.onboundary = ()=>{ target = Math.min(1, target+0.35); };
+      u.onend = next; u.onerror = next;
+      speechSynthesis.speak(u);
+    };
+    next();
+  });
+}
+
+/* ================= VOZ (entrada) ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recActive = false, wakeMode = false, awaitingCmd = false, paused = false;
+function makeRec(){
+  if(!SR) return null;
+  const r = new SR();
+  r.lang='pt-BR'; r.interimResults=true; r.continuous = wakeMode; r.maxAlternatives=1;
+  r.onresult = e=>{
+    let interim='', final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const tr = e.results[i][0].transcript;
+      if(e.results[i].isFinal) final += tr; else interim += tr;
+    }
+    if(!wakeMode || awaitingCmd || /jarvis|jarbas|jarves/i.test(interim+final)) $('live').textContent = (final||interim);
+    if(final) handleHeard(final.trim());
+  };
+  r.onend = ()=>{
+    recActive=false;
+    if(wakeMode && !paused){ setTimeout(startRec, 250); }
+    else if(state==='listening'){ setState('idle'); $('mic').classList.remove('on'); }
+  };
+  r.onerror = e=>{
+    if(e.error==='not-allowed' || e.error==='service-not-allowed'){
+      wakeMode=false; $('wake').classList.remove('on');
+      addMsg('j','Não tenho permissão para usar o microfone. Libere o acesso no navegador (ícone de cadeado na barra de endereço).');
+    }
+  };
+  return r;
+}
+function startRec(){
+  if(!SR){ addMsg('j','Seu navegador não suporta reconhecimento de voz. Use o Google Chrome ou o Microsoft Edge.'); return; }
+  if(recActive) return;
+  rec = makeRec();
+  try{ rec.start(); recActive=true; if(!wakeMode){ setState('listening'); $('mic').classList.add('on'); } else if(state==='idle') setState('idle','Aguardando "Jarvis"'); }catch(e){}
+}
+function stopRec(){ try{ rec && rec.stop(); }catch(e){} recActive=false; $('mic').classList.remove('on'); }
+function pauseRecognition(){ paused=true; if(recActive){ try{rec.abort();}catch(e){} recActive=false; } }
+function resumeRecognition(){ paused=false; if(wakeMode) setTimeout(startRec,300); else setState('idle'); }
+
+function handleHeard(text){
+  if(!wakeMode){ stopRec(); $('mic').classList.remove('on'); $('live').textContent=''; process(text); return; }
+  const m = text.match(/(jarvis|jarbas|jarves)[,.!]?\s*(.*)/i);
+  if(awaitingCmd){ awaitingCmd=false; $('live').textContent=''; process(text); return; }
+  if(m){
+    const cmd = m[2].trim();
+    $('live').textContent='';
+    if(cmd.length>2) process(cmd);
+    else { awaitingCmd=true; beep(880,.08); speak(`Sim, ${cfg.name}?`).then(()=>setState('listening')); setTimeout(()=>{awaitingCmd=false;},9000); }
+  }
+}
+
+/* ================= SOM ================= */
+let actx;
+function beep(f=660,d=.15,times=1){
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    for(let k=0;k<times;k++){
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.frequency.value=f; o.type='sine'; o.connect(g); g.connect(actx.destination);
+      const t0=actx.currentTime+k*(d+.12);
+      g.gain.setValueAtTime(.0001,t0); g.gain.exponentialRampToValueAtTime(.25,t0+.01); g.gain.exponentialRampToValueAtTime(.0001,t0+d);
+      o.start(t0); o.stop(t0+d+.02);
+    }
+  }catch(e){}
+}
+
+/* ================= CHAT ================= */
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function addMsg(who, text, links=[]){
+  const d=document.createElement('div'); d.className='msg '+who;
+  d.innerHTML = esc(text).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  links.forEach(l=>{ const a=document.createElement('a'); a.className='act'; a.href=l.url; a.target='_blank'; a.rel='noopener'; a.textContent='↗ '+l.label; d.appendChild(document.createElement('br')); d.appendChild(a); });
+  $('chat').appendChild(d);
+  $('chatPanel').scrollTop = $('chatPanel').scrollHeight;
+}
+function remember(role,text){ history.push({role,text}); history = history.slice(-30); LS.set('history',history); }
+
+/* ================= AÇÕES ================= */
+function openUrl(url,label){
+  const w = window.open(url,'_blank');
+  return {url, label: label || url.replace(/^https?:\/\/(www\.)?/,'').split('/')[0], blocked: !w};
+}
+const SITES = {
+  'youtube':'https://www.youtube.com','google':'https://www.google.com','gmail':'https://mail.google.com',
+  'instagram':'https://www.instagram.com','whatsapp':'https://web.whatsapp.com','shopee':'https://seller.shopee.com.br',
+  'github':'https://github.com','spotify':'https://open.spotify.com','netflix':'https://www.netflix.com',
+  'mapa':'https://maps.google.com','maps':'https://maps.google.com','agenda':'https://calendar.google.com',
+  'drive':'https://drive.google.com','tradutor':'https://translate.google.com','chatgpt':'https://chat.openai.com','claude':'https://claude.ai'
+};
+function addTimer(sec,label){
+  const id=Date.now()+Math.random();
+  const end=Date.now()+sec*1000;
+  const h=setTimeout(()=>{
+    timers=timers.filter(t=>t.id!==id); renderTimers();
+    beep(990,.18,4);
+    const msg=`${cfg.name[0].toUpperCase()+cfg.name.slice(1)}, o timer${label?' "'+label+'"':''} terminou.`;
+    addMsg('j',msg); speak(msg);
+    if('Notification' in window && Notification.permission==='granted') new Notification('JARVIS',{body:msg});
+  },sec*1000);
+  timers.push({id,end,label:label||'Timer',h}); renderTimers();
+  if('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+}
+function renderTimers(){
+  const ul=$('timers');
+  if(!timers.length){ ul.innerHTML='<li style="border-color:var(--dim);opacity:.6">Nenhum timer ativo</li>'; return; }
+  ul.innerHTML='';
+  timers.forEach(t=>{
+    const s=Math.max(0,Math.round((t.end-Date.now())/1000));
+    const li=document.createElement('li');
+    li.innerHTML=`<span>${esc(t.label)} — <b style="color:var(--c);font-weight:normal">${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}</b></span>`;
+    const b=document.createElement('button'); b.textContent='✕'; b.onclick=()=>{clearTimeout(t.h);timers=timers.filter(x=>x!==t);renderTimers();};
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+function renderNotes(){
+  const ul=$('notes'); ul.innerHTML='';
+  if(!notes.length){ ul.innerHTML='<li style="border-color:var(--dim);opacity:.6">Diga "anote que..." ou "lembre que..."</li>'; return; }
+  notes.forEach((n,i)=>{
+    const li=document.createElement('li'); li.innerHTML=`<span>${esc(n)}</span>`;
+    const b=document.createElement('button'); b.textContent='✕'; b.onclick=()=>{notes.splice(i,1);LS.set('notes',notes);renderNotes();};
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+function parseDuration(s){
+  let total=0;
+  const num = w => { const map={um:1,uma:1,dois:2,duas:2,'três':3,tres:3,quatro:4,cinco:5,dez:10,quinze:15,vinte:20,trinta:30,meia:.5}; return isNaN(+w)? (map[w]||0) : +w; };
+  const re=/(\d+(?:[.,]\d+)?|um|uma|dois|duas|três|tres|quatro|cinco|dez|quinze|vinte|trinta|meia)\s*(h|hora|horas|min|minuto|minutos|s|seg|segundo|segundos)\b/gi;
+  let m; while((m=re.exec(s))){ const n=num(m[1].toLowerCase().replace(',','.')); const u=m[2][0].toLowerCase(); total += u==='h'? n*3600 : (u==='m'? n*60 : n); }
+  return total;
+}
+
+/* ================= COMANDOS LOCAIS (sem internet/IA) ================= */
+function localCommand(raw){
+  const t = raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  const now = new Date();
+  if(/^(que horas|qual (e )?a hora|horas)/.test(t))
+    return {say:`São ${now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}, ${cfg.name}.`};
+  if(/(que dia e hoje|qual (e )?a data|data de hoje)/.test(t))
+    return {say:`Hoje é ${now.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}.`};
+  if(/^(timer|cronometro|alarme|me (avise|lembre) em|lembrete em)/.test(t) || /^(coloque|crie|define|defina|ativa|ative) (um )?(timer|alarme)/.test(t)){
+    const sec=parseDuration(raw);
+    if(sec>0){ const lab=(raw.match(/(?:para|pra)\s+(.+)$/i)||[])[1]; addTimer(sec,lab);
+      const mm=Math.floor(sec/60), ss=Math.round(sec%60);
+      return {say:`Timer definido para ${mm?mm+' minuto'+(mm>1?'s':''):''}${mm&&ss?' e ':''}${ss?ss+' segundos':''}.`}; }
+  }
+  if(/^(anote|anota|lembre|lembra|guarde|guarda|salve|salva|memorize)( que| isso)?[: ]/.test(t)){
+    const txt=raw.replace(/^\S+\s+(que|isso)?:?\s*/i,'').trim();
+    if(txt){ notes.push(txt); LS.set('notes',notes); renderNotes(); return {say:'Anotado e guardado na memória.'}; }
+  }
+  if(/(minhas anotacoes|o que voce lembra|o que (tem|esta) (na|em) memoria|lista de notas)/.test(t))
+    return {say: notes.length? 'Tenho isto guardado: '+notes.map((n,i)=>`${i+1}, ${n}`).join('. ') : 'Ainda não tenho nada anotado.'};
+  if(/^(limpe|limpa|apague|apaga) (a )?(conversa|tela|historico)/.test(t)){
+    history=[]; LS.set('history',history); $('chat').innerHTML=''; return {say:'Histórico apagado.'};
+  }
+  let m=t.match(/^(abra|abre|abrir|acesse|acessar|entre no|entra no)\s+(o |a )?(.+)$/);
+  if(m){
+    const k=m[3].replace(/[.!?]/g,'').trim();
+    const key=Object.keys(SITES).find(s=>k.includes(s));
+    if(key){ const r=openUrl(SITES[key],key); return {say:`Abrindo ${key}.`, links:[r]}; }
+  }
+  m=raw.match(/^(?:pesquis[ae]|procur[ae]|busque|busca)\s+(?:no\s+(youtube|google)\s+)?(?:por\s+|sobre\s+)?(.+)$/i);
+  if(m){
+    const q=encodeURIComponent(m[2]);
+    const yt = /youtube/i.test(m[1]||'');
+    const r=openUrl(yt?`https://www.youtube.com/results?search_query=${q}`:`https://www.google.com/search?q=${q}`, (yt?'YouTube: ':'Google: ')+m[2]);
+    return {say:`Pesquisando ${m[2]}.`, links:[r]};
+  }
+  m=raw.match(/^(?:toque|toca|tocar|coloque|coloca)\s+(?:a musica\s+|a música\s+)?(.+?)(?:\s+no youtube)?$/i);
+  if(m && !/timer|alarme/i.test(m[1])){
+    const r=openUrl(`https://www.youtube.com/results?search_query=${encodeURIComponent(m[1])}`,'YouTube: '+m[1]);
+    return {say:`Procurando ${m[1]} no YouTube.`, links:[r]};
+  }
+  if(/^(pare|para|silencio|cala a boca|chega)$/.test(t)){ speechSynthesis.cancel(); setState('idle'); return {say:'', silent:true}; }
+  return null;
+}
+
+/* ================= CÉREBRO (IA) ================= */
+function systemPrompt(){
+  const now=new Date();
+  return `Você é J.A.R.V.I.S., o assistente pessoal de inteligência artificial do usuário, inspirado no assistente do Homem de Ferro.
+Personalidade: educado, elegante, levemente irônico com humor britânico, extremamente competente e leal. Chame o usuário de "${cfg.name}".
+Responda SEMPRE em português do Brasil. Suas respostas serão FALADAS em voz alta: seja direto e curto (1 a 3 frases) a menos que peçam detalhes. Evite listas longas, markdown e emojis.
+Data e hora atuais: ${now.toLocaleString('pt-BR',{dateStyle:'full',timeStyle:'short'})}.
+${cfg.extra?'Sobre o usuário: '+cfg.extra+'\n':''}${notes.length?'Coisas que o usuário pediu para você lembrar:\n- '+notes.join('\n- ')+'\n':''}
+Você pode executar ações incluindo, no FINAL da resposta, uma ou mais tags (elas não serão faladas):
+[[ABRIR:https://url-completa|rótulo curto]] — abre um site ou pesquisa (ex.: Google, YouTube, Maps, WhatsApp wa.me)
+[[TIMER:segundos|rótulo]] — cria um timer/lembrete
+[[ANOTAR:texto]] — salva algo permanente na memória
+[[ESQUECER:número]] — remove a anotação de número N (começando em 1)
+Use as tags apenas quando o usuário pedir algo do tipo. Nunca invente que executou algo sem usar a tag.`;
+}
+
+async function askBrain(userText){
+  const msgs = history.slice(-16);
+  if(cfg.prov==='claude'){
+    const r = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':cfg.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:cfg.model||DEFAULT_MODELS.claude,max_tokens:1024,system:systemPrompt(),
+        messages:msgs.map(m=>({role:m.role,content:m.text}))})
+    });
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error?.message || r.status);
+    return j.content.filter(c=>c.type==='text').map(c=>c.text).join('\n');
+  }
+  // Gemini (com pesquisa Google para informação atual)
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model||DEFAULT_MODELS.gemini}:generateContent?key=${encodeURIComponent(cfg.key)}`;
+  const body = {
+    systemInstruction:{parts:[{text:systemPrompt()}]},
+    contents: msgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.text}]})),
+    generationConfig:{temperature:.7,maxOutputTokens:1024}
+  };
+  let r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,tools:[{google_search:{}}]})});
+  if(!r.ok) r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.error?.message || r.status);
+  return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').trim() || 'Não obtive resposta, '+cfg.name+'.';
+}
+
+function runActions(text){
+  const links=[];
+  text = text.replace(/\[\[(ABRIR|TIMER|ANOTAR|ESQUECER):([^\]]*)\]\]/gi,(_,type,arg)=>{
+    type=type.toUpperCase();
+    const [a,b]=arg.split('|').map(s=>s&&s.trim());
+    if(type==='ABRIR' && /^https?:\/\//.test(a)) links.push(openUrl(a,b));
+    if(type==='TIMER' && +a>0) addTimer(+a,b);
+    if(type==='ANOTAR' && a){ notes.push(a); LS.set('notes',notes); renderNotes(); }
+    if(type==='ESQUECER' && +a>0){ notes.splice(+a-1,1); LS.set('notes',notes); renderNotes(); }
+    return '';
+  }).trim();
+  return {text,links};
+}
+
+/* ================= PROCESSAMENTO ================= */
+let busy=false;
+async function process(text){
+  text=(text||'').trim(); if(!text||busy) return;
+  addMsg('u',text);
+  const local = localCommand(text);
+  if(local){
+    if(local.silent) return;
+    addMsg('j',local.say,local.links||[]);
+    remember('user',text); remember('assistant',local.say);
+    speak(local.say); return;
+  }
+  if(!cfg.key){
+    const m=`${cfg.name[0].toUpperCase()+cfg.name.slice(1)}, para conversar livremente preciso de um cérebro. Toque na engrenagem e cole uma chave de API. A do Gemini é gratuita.`;
+    addMsg('j',m); speak(m); openCfg(); return;
+  }
+  busy=true; setState('thinking');
+  remember('user',text);
+  try{
+    const raw = await askBrain(text);
+    const {text:clean,links} = runActions(raw);
+    const shown = clean || 'Feito.';
+    addMsg('j',shown,links);
+    remember('assistant',shown);
+    busy=false;
+    await speak(shown);
+  }catch(e){
+    busy=false; history.pop(); LS.set('history',history);
+    const m='Tive um problema ao acessar meus servidores: '+e.message;
+    addMsg('j',m); setState('idle'); speak('Tive um problema ao acessar meus servidores. Verifique a chave de API nas configurações.');
+  }
+}
+
+/* ================= CONFIGURAÇÕES ================= */
+function keyHint(){
+  $('keyHint').innerHTML = $('cProv').value==='gemini'
+    ? 'Gere grátis em <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>. O Gemini também pesquisa no Google para responder sobre notícias, clima, preços etc.'
+    : 'Gere em <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> (pago por uso).';
+  $('keyHint').innerHTML += '<br>A chave fica salva só neste navegador.';
+}
+function openCfg(){
+  $('cName').value=cfg.name; $('cProv').value=cfg.prov; $('cModel').value=cfg.model; $('cKey').value=cfg.key;
+  $('cRate').value=cfg.rate; $('cPitch').value=cfg.pitch; $('cExtra').value=cfg.extra; $('cVoice').value=cfg.voice;
+  keyHint(); $('cfg').classList.add('show');
+}
+function readCfg(){
+  cfg.name=$('cName').value.trim()||'senhor'; cfg.prov=$('cProv').value; cfg.model=$('cModel').value.trim()||DEFAULT_MODELS[cfg.prov];
+  cfg.key=$('cKey').value.trim(); cfg.voice=$('cVoice').value; cfg.rate=+$('cRate').value; cfg.pitch=+$('cPitch').value; cfg.extra=$('cExtra').value.trim();
+}
+$('openCfg').onclick=openCfg;
+$('cProv').onchange=()=>{ $('cModel').value=DEFAULT_MODELS[$('cProv').value]; keyHint(); };
+$('cTest').onclick=()=>{ readCfg(); speak(`Sistemas online. À sua disposição, ${cfg.name}.`); };
+$('cSave').onclick=()=>{ readCfg(); LS.set('cfg',cfg); $('cfg').classList.remove('show'); updateSide(); speak('Configurações salvas.'); };
+$('cClear').onclick=()=>{ if(confirm('Apagar configurações, memória e histórico?')){ ['cfg','notes','history'].forEach(k=>localStorage.removeItem('jarvis_'+k)); location.reload(); } };
+$('cfg').onclick=e=>{ if(e.target.id==='cfg') $('cfg').classList.remove('show'); };
+
+/* ================= UI ================= */
+$('send').onclick=()=>{ const v=$('txt').value; $('txt').value=''; process(v); };
+$('txt').onkeydown=e=>{ if(e.key==='Enter'){ $('send').click(); } };
+$('mic').onclick=()=>{ speechSynthesis.cancel(); if(wakeMode){ awaitingCmd=true; beep(880,.08); setState('listening'); return; } recActive? stopRec() : startRec(); };
+cv.onclick=()=>$('mic').click();
+$('wake').onclick=()=>{
+  wakeMode=!wakeMode; $('wake').classList.toggle('on',wakeMode);
+  stopRec();
+  if(wakeMode){ setTimeout(startRec,200); addMsg('j','Escuta contínua ativada. Diga "Jarvis" seguido do comando.'); }
+  else setState('idle');
+};
+document.addEventListener('keydown',e=>{ if(e.code==='Space' && document.activeElement!==$('txt') && !$('cfg').classList.contains('show')){ e.preventDefault(); $('mic').click(); } });
+
+function updateSide(){
+  $('sOnline').textContent = navigator.onLine?'ONLINE':'OFFLINE';
+  $('sBrain').textContent = cfg.key ? (cfg.prov==='gemini'?'GEMINI':'CLAUDE') : 'LOCAL';
+}
+function tick(){
+  const n=new Date();
+  $('clock').textContent=n.toLocaleTimeString('pt-BR');
+  $('date').textContent=n.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}).toUpperCase();
+  const up=Math.floor((Date.now()-startT)/1000);
+  $('sUp').textContent=`${String(Math.floor(up/3600)).padStart(2,'0')}:${String(Math.floor(up/60)%60).padStart(2,'0')}:${String(up%60).padStart(2,'0')}`;
+  if(timers.length) renderTimers();
+}
+setInterval(tick,1000); tick();
+window.addEventListener('online',updateSide); window.addEventListener('offline',updateSide);
+if(navigator.getBattery) navigator.getBattery().then(b=>{
+  const u=()=>{ $('sBat').textContent=Math.round(b.level*100)+'%'+(b.charging?' ⚡':''); $('batBar').style.width=b.level*100+'%'; };
+  u(); b.onlevelchange=u; b.onchargingchange=u;
+});
+
+/* ================= BOOT ================= */
+updateSide(); renderNotes(); renderTimers();
+history.slice(-10).forEach(m=>addMsg(m.role==='user'?'u':'j',m.text));
+setState('idle');
+const h=new Date().getHours();
+const greet = `${h<12?'Bom dia':h<18?'Boa tarde':'Boa noite'}, ${cfg.name}. Todos os sistemas estão online.`;
+addMsg('j', greet + (cfg.key?'':' Toque na engrenagem para conectar meu cérebro de IA.'));
+// navegadores só liberam a voz após uma interação
+document.addEventListener('click',function first(e){ if(!e.target.closest('button,input,select,canvas,a')) speak(greet); },{once:true});
+</script>
+</body>
+</html>
