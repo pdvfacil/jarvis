@@ -148,8 +148,9 @@ const LS = {
   get(k, d){ try{ const v = localStorage.getItem('jarvis_'+k); return v===null ? d : JSON.parse(v);}catch(e){return d;} },
   set(k, v){ try{ localStorage.setItem('jarvis_'+k, JSON.stringify(v)); }catch(e){} }
 };
-const DEFAULT_MODELS = { gemini:'gemini-2.5-flash', claude:'claude-sonnet-5-5' };
+const DEFAULT_MODELS = { gemini:'gemini-flash-latest', claude:'claude-sonnet-5-5' };
 let cfg = Object.assign({ name:'senhor', prov:'gemini', model:DEFAULT_MODELS.gemini, key:'', voice:'', rate:1.05, pitch:0.9, extra:'' }, LS.get('cfg', {}));
+if(cfg.prov==='gemini' && /^gemini-(1|2)\./.test(cfg.model)) cfg.model=DEFAULT_MODELS.gemini;
 let notes = LS.get('notes', []);
 let history = LS.get('history', []);   // {role:'user'|'assistant', text}
 let timers = [];
@@ -488,6 +489,10 @@ async function askBrain(userText){
   };
   let r = await fetch(url,{method:'POST',headers:gh,body:JSON.stringify({...body,tools:[{google_search:{}}]})});
   if(!r.ok) r = await fetch(url,{method:'POST',headers:gh,body:JSON.stringify(body)});
+  if(!r.ok && r.status===404 && cfg.model!==DEFAULT_MODELS.gemini){
+    cfg.model=DEFAULT_MODELS.gemini; LS.set('cfg',cfg);
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,{method:'POST',headers:gh,body:JSON.stringify(body)});
+  }
   const j = await r.json();
   if(!r.ok) throw new Error(j.error?.message || r.status);
   return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').trim() || 'Não obtive resposta, '+cfg.name+'.';
