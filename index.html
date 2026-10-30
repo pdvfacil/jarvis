@@ -364,10 +364,10 @@ async function speak(text){
     let played=0;
     try{
       // gera o próximo trecho enquanto o atual toca
-      let next=geminiTTS(chunks[0]);
+      let next=geminiTTS(chunks[0]); next.catch(()=>{});
       for(let i=0;i<chunks.length;i++){
         const buf=await next;
-        if(i+1<chunks.length) next=geminiTTS(chunks[i+1]);
+        if(i+1<chunks.length){ next=geminiTTS(chunks[i+1]); next.catch(()=>{}); }
         setState('speaking','Respondendo · voz '+(cfg.nvoice||'Charon'));
         await playBuffer(buf); played++;
       }
