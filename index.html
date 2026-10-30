@@ -133,8 +133,10 @@ canvas#core{width:min(100%,560px);aspect-ratio:1;cursor:pointer}
     </div>
     <label>Personalidade extra (opcional)</label>
     <input id="cExtra" placeholder="Ex.: sou dono da Jaylson Store, vendo produtos Apple...">
+    <div class="hint" id="connOut" style="white-space:pre-wrap;color:var(--warn)"></div>
     <div class="row" style="margin-top:18px">
       <button class="btn" id="cTest">Testar voz</button>
+      <button class="btn" id="cConn">Testar IA</button>
       <button class="btn" id="cClear" style="border-color:var(--red);color:var(--red)">Apagar tudo</button>
       <button class="btn" id="cSave">Salvar</button>
     </div>
@@ -467,6 +469,10 @@ Use as tags apenas quando o usuário pedir algo do tipo. Nunca invente que execu
 }
 
 async function askBrain(userText){
+  try{ return await askBrainRaw(userText); }
+  catch(e){ if(e instanceof TypeError) throw new Error('Falha de rede/CORS ('+e.message+'). Verifique internet, bloqueador de anúncios ou extensão do navegador.'); throw e; }
+}
+async function askBrainRaw(userText){
   const msgs = history.slice(-16);
   if(cfg.prov==='claude'){
     const r = await fetch('https://api.anthropic.com/v1/messages',{
@@ -493,8 +499,8 @@ async function askBrain(userText){
     cfg.model=DEFAULT_MODELS.gemini; LS.set('cfg',cfg);
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`,{method:'POST',headers:gh,body:JSON.stringify(body)});
   }
-  const j = await r.json();
-  if(!r.ok) throw new Error(j.error?.message || r.status);
+  let j; try{ j = await r.json(); }catch(e){ j={}; }
+  if(!r.ok) throw new Error(`HTTP ${r.status} ${j.error?.status||''} — ${j.error?.message||JSON.stringify(j).slice(0,300)}`);
   return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('').trim() || 'Não obtive resposta, '+cfg.name+'.';
 }
 
@@ -563,6 +569,13 @@ function readCfg(){
 }
 $('openCfg').onclick=openCfg;
 $('cProv').onchange=()=>{ $('cModel').value=DEFAULT_MODELS[$('cProv').value]; keyHint(); };
+$('cConn').onclick=async()=>{
+  readCfg(); const out=$('connOut'); out.style.color='var(--warn)'; out.textContent='Testando...';
+  const saved=history; history=[{role:'user',text:'Responda apenas: conectado.'}];
+  try{ const r=await askBrain(''); out.style.color='var(--c)'; out.textContent='✓ Funcionando! Resposta: '+r.slice(0,120); }
+  catch(e){ out.textContent='✗ '+e.message; }
+  history=saved;
+};
 $('cTest').onclick=()=>{ readCfg(); speak(`Sistemas online. À sua disposição, ${cfg.name}.`); };
 $('cSave').onclick=()=>{ readCfg(); LS.set('cfg',cfg); $('cfg').classList.remove('show'); updateSide(); speak('Configurações salvas.'); };
 $('cClear').onclick=()=>{ if(confirm('Apagar configurações, memória e histórico?')){ ['cfg','notes','history'].forEach(k=>localStorage.removeItem('jarvis_'+k)); location.reload(); } };
