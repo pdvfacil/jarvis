@@ -270,7 +270,25 @@ function setState(s, label){
 /* ================= VOZ NEURAL (Gemini TTS) + EFEITO ================= */
 const TTS_MODELS=['gemini-3.1-flash-tts-preview','gemini-2.5-flash-preview-tts'];
 let ttsModelIdx=0, curSrc=null, analyser=null;
-function getActx(){ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
+function getActx(){ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state!=='running') actx.resume().catch(()=>{}); return actx; }
+let audioUnlocked=false, lastSpoken='';
+function unlockAudio(){
+  try{
+    const ac=getActx();
+    const b=ac.createBuffer(1,1,22050), s=ac.createBufferSource(); s.buffer=b; s.connect(ac.destination); s.start(0);
+    if(!audioUnlocked && 'speechSynthesis' in window){ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }
+    audioUnlocked=true;
+    const bn=$('soundBtn'); if(bn && ac.state==='running') bn.remove();
+  }catch(e){}
+}
+['pointerdown','touchend','keydown','click'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true,capture:true}));
+function askTapForSound(){
+  if($('soundBtn')) return;
+  const b=document.createElement('button'); b.id='soundBtn'; b.textContent='🔊 Toque aqui para ouvir a resposta';
+  b.style.cssText='position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:20;padding:14px 22px;border-radius:30px;border:1px solid var(--c);background:#03202c;color:var(--c);font-size:16px;box-shadow:0 0 20px rgba(41,227,255,.5)';
+  b.onclick=()=>{ unlockAudio(); b.remove(); if(lastSpoken) speak(lastSpoken); };
+  document.body.appendChild(b);
+}
 async function geminiTTS(text){
   const prompt=`Leia em português do Brasil, com a voz de um assistente de inteligência artificial sofisticado: calma, grave, educada, confiante, com um toque de humor seco, ritmo natural e sem pressa. Texto: ${text}`;
   for(let i=ttsModelIdx;i<TTS_MODELS.length;i++){
@@ -292,8 +310,10 @@ async function geminiTTS(text){
   throw new Error('nenhum modelo de voz disponível');
 }
 function playBuffer(buf){
-  return new Promise(res=>{
-    const ac=getActx(), src=ac.createBufferSource(); src.buffer=buf; curSrc=src;
+  return new Promise((res,rej)=>{
+    const ac=getActx();
+    if(ac.state!=='running'){ return rej(new Error('BLOQUEIO_AUDIO')); }
+    const src=ac.createBufferSource(); src.buffer=buf; curSrc=src;
     const out=ac.createGain(); out.gain.value=1;
     analyser=ac.createAnalyser(); analyser.fftSize=256;
     let node=src;
@@ -314,7 +334,8 @@ function playBuffer(buf){
       comp.connect(out); wet.connect(out); eg.connect(out);
     } else node.connect(out);
     out.connect(analyser); analyser.connect(ac.destination);
-    src.onended=()=>{ curSrc=null; analyser=null; res(); };
+    let done=false; const fin=()=>{ if(done) return; done=true; curSrc=null; analyser=null; res(); };
+    src.onended=fin; setTimeout(fin,(buf.duration+2)*1000);
     src.start();
   });
 }
@@ -356,8 +377,11 @@ function ttsReason(e){
 }
 async function speak(text){
   if(!text) return;
+  lastSpoken=text;
   speechSynthesis.cancel(); stopAudio();
   const clean=cleanForSpeech(text);
+  getActx();
+  if(actx && actx.state!=='running'){ await new Promise(r=>setTimeout(r,250)); }
   if(cfg.tts==='gemini' && cfg.key && cfg.prov==='gemini'){
     pauseRecognition(); setState('thinking','Gerando voz');
     const chunks=splitChunks(clean.slice(0,2500));
@@ -373,6 +397,7 @@ async function speak(text){
       }
       lastTtsErr=''; setState('idle'); resumeRecognition(); return;
     }catch(e){
+      if(e.message==='BLOQUEIO_AUDIO'){ askTapForSound(); setState('idle','Toque para ouvir'); resumeRecognition(); return; }
       const why=ttsReason(e);
       if(why!==lastTtsErr){ lastTtsErr=why; addMsg('j','⚠ Voz neural ('+(cfg.nvoice||'Charon')+') falhou: '+why+'. Por isso esta resposta saiu com a voz do navegador.'); }
       const rest=chunks.slice(played).join(' ');
@@ -396,7 +421,9 @@ function speakBrowser(text){
       const v = voices.find(v=>v.name===cfg.voice); if(v){u.voice=v;u.lang=v.lang;} else u.lang='pt-BR';
       u.rate = +cfg.rate; u.pitch = +cfg.pitch;
       u.onboundary = ()=>{ target = Math.min(1, target+0.35); };
-      u.onend = next; u.onerror = next;
+      let fired=false; const go=()=>{ if(fired) return; fired=true; clearTimeout(tm); next(); };
+      const tm=setTimeout(()=>{ if(!speechSynthesis.speaking){ askTapForSound(); } go(); }, 2500 + u.text.length*90);
+      u.onend = go; u.onerror = ev=>{ if(ev.error==='not-allowed') askTapForSound(); go(); };
       speechSynthesis.speak(u);
     };
     next();
